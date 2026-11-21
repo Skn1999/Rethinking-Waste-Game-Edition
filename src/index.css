@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  /* Core dark surfaces */
+  --bg-canvas: #08090A;
+  --bg-card: #111214;
+  --bg-card-raised: #18191C;
+  --border-hairline: #23252A;
+
+  /* Typography */
+  --text-primary: #F7F8F8;
+  --text-secondary: #8A8F98;
+  --text-tertiary: #5C616B;
+
+  /* Brand & semantic states */
+  --accent-compost: #C8F560;
+  --state-correct: #4CC38A;
+  --state-wrong: #F2555A;
+  --state-warning: #F5A524;
+
+  /* Waste category tokens */
+  --bin-bio: #7BAE45;
+  --bin-paper: #4C8DF6;
+  --bin-cardboard: #C08A4E;
+  --bin-plastic: #F2C230;
+  --bin-glass: #3FB8A8;
+  --bin-metal: #A3A9B4;
+  --bin-mixed: #6B6F78;
+  --bin-hazard: #E5484D;
+  --bin-reuse: #B48CF2;
+
+  /* Radius scale */
+  --radius-chip: 6px;
+  --radius-card: 12px;
+  --radius-hero: 20px;
+
+  /* Font families */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@theme inline {
+  --color-canvas: var(--bg-canvas);
+  --color-card: var(--bg-card);
+  --color-card-raised: var(--bg-card-raised);
+  --color-hairline: var(--border-hairline);
+  --color-ink-primary: var(--text-primary);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-tertiary: var(--text-tertiary);
+  --color-compost: var(--accent-compost);
+  --color-correct: var(--state-correct);
+  --color-wrong: var(--state-wrong);
+  --color-warning: var(--state-warning);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--accent-compost);
+    outline-offset: 2px;
+  }
+}
+
+.tabular-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.drawn-glow {
+  box-shadow: 0 0 80px rgba(200, 245, 96, 0.35);
+}
+
+.drawn-text-glow {
+  text-shadow: 0 0 80px rgba(200, 245, 96, 0.35);
+}
+
+.tracking-display {
+  letter-spacing: -0.02em;
+}
+
+/* Custom subtle scrollbars for console panels only */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #23252A;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #353840;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-sheet {
+    page-break-after: always;
+    break-after: page;
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .print-sheet:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}
+

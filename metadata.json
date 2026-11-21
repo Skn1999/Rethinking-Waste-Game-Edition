@@ -1,0 +1,6 @@
+{
+  "name": "Who's Sorting?",
+  "description": "A big-screen bilingual waste-sorting number draw party game for the Rethinking Waste cookout.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
