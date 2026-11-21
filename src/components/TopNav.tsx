@@ -5,8 +5,8 @@ const NAV_ITEMS = [
   { to: '/host', label: 'Host Console' },
   { to: '/setup', label: 'Setup' },
   { to: '/stage', label: 'Stage' },
-  { to: '/print-cards', label: 'Print Cards' },
-  { to: '/kitchen-sink', label: 'Components' },
+  { to: '/play', label: 'Guest Play' },
+  { to: '/print-cards', label: 'Print QR & Cards' },
 ];
 
 export function TopNav() {

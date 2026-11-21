@@ -11,15 +11,24 @@ import {
   MessageCircle,
   Pause,
   Play,
+  QrCode,
   RotateCcw,
+  Smartphone,
   Sparkles,
   StickyNote,
+  Trash2,
   UserCheck,
   UserX,
+  Users,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
+import {
+  QrCodeSvg,
+  getDisplayJoinUrl,
+  getGuestJoinUrl,
+} from '../components/QrCodeSvg';
 import { TopNav } from '../components/TopNav';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -31,7 +40,11 @@ import { TimerRing } from '../components/ui/TimerRing';
 import { Toast } from '../components/ui/Toast';
 import { useSlotRoll } from '../hooks/useSlotRoll';
 import { useSyncedTimer } from '../hooks/useSyncedTimer';
-import { publishCurrentState, useGameStore } from '../store/gameStore';
+import {
+  hydrateCheckedInGuests,
+  publishCurrentState,
+  useGameStore,
+} from '../store/gameStore';
 import type { NumberState, Question } from '../types/game';
 import {
   playCorrectGuess,
@@ -58,6 +71,8 @@ export function HostPage() {
   const drawAnimation = useGameStore((s) => s.drawAnimation);
   const poolEmptyPrompt = useGameStore((s) => s.poolEmptyPrompt);
   const toast = useGameStore((s) => s.toast);
+  const checkedInNumbers = useGameStore((s) => s.checkedInNumbers);
+  const lastAnsweredByPhone = useGameStore((s) => s.lastAnsweredByPhone);
 
   const startGame = useGameStore((s) => s.startGame);
   const goToIdle = useGameStore((s) => s.goToIdle);
@@ -82,15 +97,42 @@ export function HostPage() {
   const undo = useGameStore((s) => s.undo);
   const dismissToast = useGameStore((s) => s.dismissToast);
   const requestStageFullscreen = useGameStore((s) => s.requestStageFullscreen);
+  const resetCheckedInGuests = useGameStore((s) => s.resetCheckedInGuests);
   const updateSettings = useGameStore((s) => s.updateSettings);
 
   const [selectedTile, setSelectedTile] = useState<number | null>(null);
   const [copiedStageLink, setCopiedStageLink] = useState(false);
+  const [copiedJoinLink, setCopiedJoinLink] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [confirmResetCheckIns, setConfirmResetCheckIns] = useState(false);
+  const lastPhoneSoundTsRef = useRef<number>(lastAnsweredByPhone?.timestamp ?? 0);
 
-  // Publish current host state to the sync relay on mount so an open Stage tab catches up immediately
+  const joinUrl = useMemo(() => getGuestJoinUrl(), []);
+  const displayJoinUrl = useMemo(() => getDisplayJoinUrl(), []);
+  const checkedInSet = useMemo(() => new Set(checkedInNumbers), [checkedInNumbers]);
+
+  // Publish current host state & fetch checked-in guests on mount
   useEffect(() => {
     publishCurrentState();
+    void hydrateCheckedInGuests();
   }, []);
+
+  // Play room speakers SFX when a called guest auto-reveals from their phone
+  useEffect(() => {
+    if (!lastAnsweredByPhone) return;
+    if (lastAnsweredByPhone.timestamp <= lastPhoneSoundTsRef.current) return;
+    lastPhoneSoundTsRef.current = lastAnsweredByPhone.timestamp;
+
+    if (settings.sound) {
+      if (lastAnsweredByPhone.correct === true) {
+        playCorrectGuess();
+      } else if (lastAnsweredByPhone.correct === false) {
+        playWrongGuess();
+      } else {
+        playNeutralReveal();
+      }
+    }
+  }, [lastAnsweredByPhone, settings.sound]);
 
   const { remainingMs, totalSeconds, status: timerStatus } = useSyncedTimer();
   const lastWarnSecRef = useRef<number | null>(null);
@@ -162,12 +204,18 @@ export function HostPage() {
       answered: 0,
       excluded: 0,
     };
+    let checkedInEligible = 0;
     for (const n of numberList) {
       const st = numbers[n] ?? 'available';
       counts[st] += 1;
+      if (checkedInSet.has(n)) {
+        if (st === 'available' || (settings.allowRepeats && st === 'answered')) {
+          checkedInEligible += 1;
+        }
+      }
     }
-    return counts;
-  }, [numberList, numbers]);
+    return { ...counts, checkedInEligible };
+  }, [numberList, numbers, checkedInSet, settings.allowRepeats]);
 
   const stats = useMemo(() => {
     const scored = rounds.filter((r) => r.correct !== null);
@@ -346,6 +394,16 @@ export function HostPage() {
     }
   };
 
+  const handleCopyJoinUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+      setCopiedJoinLink(true);
+      window.setTimeout(() => setCopiedJoinLink(false), 2000);
+    } catch {
+      // Ignore clipboard failures in restricted frames
+    }
+  };
+
   const getOptionState = (idx: number): OptionRowState => {
     if (!currentQuestion) return 'idle';
     if (phase === 'revealed') {
@@ -379,9 +437,9 @@ export function HostPage() {
           >
             <div className="text-[14px] text-[#F7F8F8]">
               <span className="font-semibold text-[#F5A524]">
-                All numbers have played
+                All checked-in guests have played
               </span>{' '}
-              — reset the number pool to keep drawing?
+              — reset the number pool to draw checked-in guests again?
             </div>
             <div className="flex items-center gap-2">
               <Button variant="primary" onClick={resetNumberPool}>
@@ -443,16 +501,20 @@ export function HostPage() {
                     Who&apos;s sorting? / Kuka lajittelee?
                   </h1>
                   <p className="text-[14px] text-[#8A8F98] max-w-md mx-auto">
-                    {order.length} questions loaded and{' '}
-                    <span className="tabular-mono text-[#F7F8F8]">
-                      {poolCounts.available}
+                    {order.length} questions loaded ·{' '}
+                    <span className="tabular-mono text-[#4CC38A] font-medium">
+                      {checkedInNumbers.length} checked in via QR
                     </span>{' '}
-                    guest numbers in the pool. Open Stage on your projector, then start Round 1.
+                    ({poolCounts.checkedInEligible} ready to draw). Open Stage on your projector so guests can scan and join.
                   </p>
-                  <div className="pt-2 flex items-center justify-center gap-3">
+                  <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
                     <Button variant="primary" size="lg" kbd="N" onClick={startGame}>
                       <Play className="w-4 h-4" />
                       Start Round 1
+                    </Button>
+                    <Button variant="secondary" size="lg" onClick={() => setQrModalOpen(true)}>
+                      <QrCode className="w-4 h-4" />
+                      Show Join QR
                     </Button>
                   </div>
                 </div>
@@ -606,7 +668,11 @@ export function HostPage() {
                         (hidden on Stage until Reveal)
                       </span>
                       {currentQuestion.type !== 'discussion' && (
-                        <span>Tap an option or press 1–4 to log guest&apos;s pick</span>
+                        <span>
+                          {phase === 'answering' && currentNumber !== null
+                            ? `Waiting for #${currentNumber} on phone (or press 1–4)`
+                            : 'Tap an option or press 1–4 to log guest’s pick'}
+                        </span>
                       )}
                     </div>
                   ) : (
@@ -630,6 +696,13 @@ export function HostPage() {
                                 {currentRoundOutcome
                                   ? '✓ Counted correct'
                                   : '✕ Counted incorrect'}
+                              </span>
+                            )}
+                          {lastAnsweredByPhone &&
+                            lastAnsweredByPhone.number === currentNumber && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-[#8A8F98]">
+                                <Smartphone className="w-3 h-3 text-[#C8F560]" />
+                                Answered from phone
                               </span>
                             )}
                         </div>
@@ -999,6 +1072,100 @@ export function HostPage() {
               </div>
             </Card>
 
+            {/* Guest QR Check-In Card */}
+            <Card padding="sm" className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setQrModalOpen(true)}
+                    title="Expand QR code"
+                    className="bg-white rounded-[8px] p-1.5 shrink-0 hover:scale-[1.03] transition-transform cursor-pointer"
+                  >
+                    <QrCodeSvg
+                      value={joinUrl}
+                      size={68}
+                      label="Guest check-in QR code"
+                    />
+                  </button>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-semibold text-[#F7F8F8]">
+                        QR Guest Check-In
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#4CC38A] tabular-mono">
+                        <Users className="w-3.5 h-3.5" />
+                        {checkedInNumbers.length} joined
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[#8A8F98] leading-snug">
+                      Only checked-in guests enter the draw.{' '}
+                      <span className="tabular-mono text-[#F7F8F8]">
+                        {poolCounts.checkedInEligible}
+                      </span>{' '}
+                      ready now.
+                    </p>
+                    <div className="text-[11px] tabular-mono text-[#5C616B] truncate">
+                      {displayJoinUrl}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#23252A]">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setQrModalOpen(true)}
+                    className="h-7 px-2.5 text-[12px]"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    Large QR
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => void handleCopyJoinUrl()}
+                    className="h-7 px-2.5 text-[12px]"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copiedJoinLink ? 'Copied!' : 'Copy /play'}
+                  </Button>
+                </div>
+
+                {checkedInNumbers.length > 0 &&
+                  (confirmResetCheckIns ? (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="danger"
+                        onClick={() => {
+                          void resetCheckedInGuests();
+                          setConfirmResetCheckIns(false);
+                        }}
+                        className="h-7 px-2.5 text-[12px]"
+                      >
+                        Confirm Clear
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setConfirmResetCheckIns(false)}
+                        className="h-7 px-2 text-[12px]"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      onClick={() => setConfirmResetCheckIns(true)}
+                      className="h-7 px-2 text-[12px] text-[#8A8F98] hover:text-[#F2555A]"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Clear Check-Ins
+                    </Button>
+                  ))}
+              </div>
+            </Card>
+
             {/* Interactive Number Grid (H7) */}
             <Card className="space-y-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1007,7 +1174,7 @@ export function HostPage() {
                     Guest Numbers ({settings.range.min}–{settings.range.max})
                   </h2>
                   <p className="text-[12px] text-[#8A8F98] tabular-mono mt-0.5">
-                    {poolCounts.available} available · {poolCounts.answered} answered ·{' '}
+                    {poolCounts.checkedInEligible} ready to draw · {poolCounts.answered} answered ·{' '}
                     {poolCounts.absent} absent · {poolCounts.excluded} excluded
                   </p>
                 </div>
@@ -1024,7 +1191,11 @@ export function HostPage() {
                       #{selectedTile}
                     </span>{' '}
                     <span className="text-[#8A8F98] capitalize">
-                      ({selectedTileState})
+                      ({selectedTileState}
+                      {checkedInSet.has(selectedTile)
+                        ? ' · QR checked in'
+                        : ' · not checked in'}
+                      )
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -1074,6 +1245,7 @@ export function HostPage() {
                     key={num}
                     number={num}
                     state={numbers[num] ?? 'available'}
+                    checkedIn={checkedInSet.has(num)}
                     selected={selectedTile === num}
                     onClick={() =>
                       setSelectedTile((prev) => (prev === num ? null : num))
@@ -1085,8 +1257,12 @@ export function HostPage() {
               {/* Clean State Legend */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-2 border-t border-[#23252A] text-[11px] text-[#8A8F98]">
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-[3px] bg-[#111214] border border-[#3A3D46]" />
-                  Available
+                  <span className="w-2.5 h-2.5 rounded-[3px] bg-[#111214] border border-[#4CC38A]/80" />
+                  Checked in
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-[3px] bg-[#0C0D0F] border border-[#23252A]" />
+                  Unclaimed
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-[3px] bg-[#C8F560]" />
@@ -1100,15 +1276,73 @@ export function HostPage() {
                   <span className="w-2.5 h-2.5 rounded-[3px] bg-[#18191C] border border-[#23252A]" />
                   Answered
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-[3px] bg-[#08090A] border border-[#1A1C20]" />
-                  Excluded
-                </span>
               </div>
             </Card>
           </div>
         </div>
       </main>
+
+      {/* Large Scannable QR Modal for Host Console */}
+      {qrModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setQrModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-[16px] bg-[#111214] border border-[#23252A] p-6 space-y-5 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-left">
+                <h3 className="text-[16px] font-semibold text-[#F7F8F8]">
+                  Guest Check-In QR
+                </h3>
+                <p className="text-[12px] text-[#8A8F98]">
+                  Scan to get a number &amp; play on phone
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrModalOpen(false)}
+                aria-label="Close QR modal"
+                className="w-8 h-8 rounded-[8px] border border-[#23252A] text-[#8A8F98] hover:text-[#F7F8F8] flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-white rounded-[14px] p-4 inline-block mx-auto">
+              <QrCodeSvg
+                value={joinUrl}
+                size={240}
+                label="Large QR code for guest check-in"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 text-[14px] font-semibold text-[#4CC38A] tabular-mono">
+                <Users className="w-4 h-4" />
+                <span>{checkedInNumbers.length} guests checked in</span>
+              </div>
+              <div className="text-[12px] tabular-mono text-[#8A8F98] break-all">
+                {joinUrl}
+              </div>
+              <div className="pt-2 flex items-center justify-center gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleCopyJoinUrl()}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {copiedJoinLink ? 'Link Copied' : 'Copy Join Link'}
+                </Button>
+                <Button variant="primary" onClick={() => setQrModalOpen(false)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Toast
         message={toast?.message ?? null}

@@ -5,6 +5,7 @@ import type {
   GamePhase,
   GameSettings,
   GameSnapshot,
+  LastPhoneAnswer,
   NumberState,
   Question,
   RoundRecord,
@@ -53,10 +54,12 @@ interface PersistedState {
   timerStartedAt: number | null;
   drawAnimation: DrawAnimationPayload | null;
   poolEmptyPrompt: boolean;
+  lastAnsweredByPhone?: LastPhoneAnswer | null;
 }
 
 export interface GameStore extends PersistedState {
   toast: ToastMessage | null;
+  checkedInNumbers: number[];
   // Setup & settings actions
   updateSettings: (partial: Partial<GameSettings>) => void;
   setNumberRangeAndExcluded: (min: number, max: number, excluded: number[]) => void;
@@ -105,8 +108,9 @@ export interface GameStore extends PersistedState {
   undo: () => void;
   dismissToast: () => void;
 
-  // Broadcast helpers
+  // Broadcast & Guest check-in helpers
   requestStageFullscreen: () => void;
+  resetCheckedInGuests: () => Promise<void>;
 }
 
 function buildInitialNumbers(
@@ -147,11 +151,14 @@ function createSnapshot(state: PersistedState): GameSnapshot {
 
 function getEligiblePool(
   numbers: Record<number, NumberState>,
-  settings: GameSettings
+  settings: GameSettings,
+  checkedInNumbers: number[]
 ): number[] {
   const { min, max } = settings.range;
+  const checkedInSet = new Set(checkedInNumbers);
   const pool: number[] = [];
   for (let n = min; n <= max; n++) {
+    if (!checkedInSet.has(n)) continue;
     const st = numbers[n];
     if (st === 'available') {
       pool.push(n);
@@ -217,6 +224,7 @@ function createDefaultPersistedState(): PersistedState {
     timerStartedAt: null,
     drawAnimation: null,
     poolEmptyPrompt: false,
+    lastAnsweredByPhone: null,
   };
 }
 
@@ -239,6 +247,7 @@ function extractPersistedState(state: GameStore): PersistedState {
     timerStartedAt: state.timerStartedAt,
     drawAnimation: state.drawAnimation,
     poolEmptyPrompt: state.poolEmptyPrompt,
+    lastAnsweredByPhone: state.lastAnsweredByPhone ?? null,
   };
 }
 
@@ -379,19 +388,49 @@ function isValidPersistedState(value: unknown): value is PersistedState {
 }
 
 /**
- * Hydrates latest state from the local sync relay (used when Stage mounts).
+ * Hydrates latest state & checked-in guests from the local sync relay.
  */
 export async function hydrateFromRelay(): Promise<void> {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
   try {
     const res = await fetch('/api/sync/state', { cache: 'no-store' });
     if (!res.ok) return;
-    const data = (await res.json()) as { payload?: unknown };
+    const data = (await res.json()) as {
+      payload?: unknown;
+      checkedInNumbers?: unknown;
+    };
+    const patch: Partial<GameStore> = {};
     if (isValidPersistedState(data?.payload)) {
-      useGameStore.setState({ ...data.payload });
+      Object.assign(patch, data.payload);
+    }
+    if (Array.isArray(data?.checkedInNumbers)) {
+      patch.checkedInNumbers = data.checkedInNumbers.filter(
+        (n): n is number => typeof n === 'number' && Number.isInteger(n)
+      );
+    }
+    if (Object.keys(patch).length > 0) {
+      useGameStore.setState(patch);
     }
   } catch {
     // Offline or static host
+  }
+}
+
+export async function hydrateCheckedInGuests(): Promise<void> {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
+  try {
+    const res = await fetch('/api/guests', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = (await res.json()) as { checkedInNumbers?: unknown };
+    if (Array.isArray(data?.checkedInNumbers)) {
+      useGameStore.setState({
+        checkedInNumbers: data.checkedInNumbers.filter(
+          (n): n is number => typeof n === 'number' && Number.isInteger(n)
+        ),
+      });
+    }
+  } catch {
+    // Offline
   }
 }
 
@@ -495,6 +534,7 @@ export const useGameStore = create<GameStore>((set, get) => {
   return {
     ...initial,
     toast: null,
+    checkedInNumbers: [],
 
     updateSettings: (partial) => {
       commit((state) => {
@@ -825,6 +865,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           timerRemainingMs: state.settings.timerSeconds * 1000,
           timerStartedAt: null,
           poolEmptyPrompt: false,
+          lastAnsweredByPhone: null,
         }),
         { recordHistory: true, toastMessage: 'Round 1 ready — press Space to draw a guest' }
       );
@@ -887,6 +928,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             timerRemainingMs: state.settings.timerSeconds * 1000,
             timerStartedAt: null,
             poolEmptyPrompt: false,
+            lastAnsweredByPhone: null,
           };
         },
         { recordHistory: true, toastMessage: 'Game reset to fresh event' }
@@ -922,6 +964,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             timerRemainingMs: s.settings.timerSeconds * 1000,
             timerStartedAt: null,
             poolEmptyPrompt: false,
+            lastAnsweredByPhone: null,
           };
         },
         {
@@ -1019,11 +1062,26 @@ export const useGameStore = create<GameStore>((set, get) => {
         workingNumbers[state.currentNumber] = 'available';
       }
 
-      const pool = getEligiblePool(workingNumbers, state.settings);
+      if (state.checkedInNumbers.length === 0) {
+        showToast(
+          'No guests checked in yet — have guests scan the QR code to join',
+          false
+        );
+        return;
+      }
+
+      const pool = getEligiblePool(
+        workingNumbers,
+        state.settings,
+        state.checkedInNumbers
+      );
       if (pool.length === 0) {
         set({ poolEmptyPrompt: true });
         persistAndBroadcast(get());
-        showToast('All numbers have played — reset the pool to continue', false);
+        showToast(
+          'All checked-in guests have played — reset the pool to draw again',
+          false
+        );
         return;
       }
 
@@ -1056,6 +1114,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           timerStatus: 'idle',
           timerRemainingMs: s.settings.timerSeconds * 1000,
           timerStartedAt: null,
+          lastAnsweredByPhone: null,
         }),
         { recordHistory: true, toastMessage: `Drawing guest #${picked}` }
       );
@@ -1083,7 +1142,11 @@ export const useGameStore = create<GameStore>((set, get) => {
         [absentNum]: state.rounds.length,
       };
 
-      const pool = getEligiblePool(workingNumbers, state.settings);
+      const pool = getEligiblePool(
+        workingNumbers,
+        state.settings,
+        state.checkedInNumbers
+      );
       if (pool.length === 0) {
         commit(
           () => ({
@@ -1449,6 +1512,17 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
       showToast('Sent fullscreen toggle to Stage window', false);
     },
+
+    resetCheckedInGuests: async () => {
+      try {
+        const res = await fetch('/api/guests/reset', { method: 'POST' });
+        if (!res.ok) return;
+        set({ checkedInNumbers: [] });
+        showToast('All QR guest check-ins cleared for a fresh session', false);
+      } catch {
+        showToast('Could not reach server to clear check-ins', false);
+      }
+    },
   };
 });
 
@@ -1501,11 +1575,29 @@ if (typeof window !== 'undefined') {
       lastAppliedRelayTs = updatedAt;
     }
     useGameStore.setState({ ...payload });
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage quota issues
+    }
+  };
+
+  const applyCheckedInGuests = (raw: unknown) => {
+    if (!Array.isArray(raw)) return;
+    const valid = raw.filter(
+      (n): n is number => typeof n === 'number' && Number.isInteger(n)
+    );
+    useGameStore.setState({ checkedInNumbers: valid });
   };
 
   const startStageFallbackPoll = () => {
     if (fallbackPollId !== null) return;
-    if (!window.location.pathname.startsWith('/stage')) return;
+    if (
+      !window.location.pathname.startsWith('/stage') &&
+      !window.location.pathname.startsWith('/host')
+    ) {
+      return;
+    }
     fallbackPollId = window.setInterval(async () => {
       try {
         const res = await fetch('/api/sync/state', { cache: 'no-store' });
@@ -1513,9 +1605,13 @@ if (typeof window !== 'undefined') {
         const data = (await res.json()) as {
           payload?: PersistedState | null;
           updatedAt?: number | null;
+          checkedInNumbers?: unknown;
         };
         if (data?.payload) {
           applyRelayState(data.payload, data.updatedAt);
+        }
+        if (data?.checkedInNumbers) {
+          applyCheckedInGuests(data.checkedInNumbers);
         }
       } catch {
         // Ignore offline
@@ -1549,6 +1645,18 @@ if (typeof window !== 'undefined') {
             };
             if (!parsed || parsed.sender === TAB_ID || !parsed.payload) return;
             applyRelayState(parsed.payload, parsed.updatedAt);
+          } catch {
+            // Ignore malformed SSE frame
+          }
+        });
+        es.addEventListener('guests', (evt) => {
+          try {
+            const parsed = JSON.parse((evt as MessageEvent).data) as {
+              checkedInNumbers?: unknown;
+            };
+            if (parsed?.checkedInNumbers) {
+              applyCheckedInGuests(parsed.checkedInNumbers);
+            }
           } catch {
             // Ignore malformed SSE frame
           }

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Maximize2, MessageCircle, Minimize2, Recycle } from 'lucide-react';
+import { Maximize2, MessageCircle, Minimize2, Recycle, Users } from 'lucide-react';
+import {
+  QrCodeSvg,
+  getDisplayJoinUrl,
+  getGuestJoinUrl,
+} from '../components/QrCodeSvg';
 import { Card } from '../components/ui/Card';
 import { CategoryTag } from '../components/ui/CategoryTag';
 import { OptionRow, type OptionRowState } from '../components/ui/OptionRow';
@@ -29,6 +34,9 @@ export function StagePage() {
   const selectedOption = useGameStore((s) => s.selectedOption);
   const rounds = useGameStore((s) => s.rounds);
   const drawAnimation = useGameStore((s) => s.drawAnimation);
+  const checkedInNumbers = useGameStore((s) => s.checkedInNumbers);
+  const joinUrl = useMemo(() => getGuestJoinUrl(), []);
+  const displayJoinUrl = useMemo(() => getDisplayJoinUrl(), []);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsHintVisible, setFsHintVisible] = useState(false);
@@ -172,46 +180,90 @@ export function StagePage() {
               <span>{settings.eventName}</span>
             </div>
 
-            {/* Center Ambient Hero */}
-            <div className="relative flex-1 flex flex-col items-center justify-center text-center px-6">
+            {/* Center Ambient Hero + QR Check-In Card */}
+            <div className="relative flex-1 grid grid-cols-12 items-center gap-[clamp(24px,3vw,56px)] px-[clamp(8px,1.5vw,28px)] min-h-0">
               {!prefersReduced && (
                 <motion.div
                   aria-hidden="true"
                   animate={{
                     scale: [1, 1.08, 1],
-                    opacity: [0.16, 0.28, 0.16],
+                    opacity: [0.14, 0.24, 0.14],
                   }}
                   transition={{
                     duration: 6,
                     repeat: Infinity,
                     ease: 'easeInOut',
                   }}
-                  className="pointer-events-none absolute w-[clamp(260px,30vw,540px)] h-[clamp(260px,30vw,540px)] rounded-full blur-[110px]"
+                  className="pointer-events-none absolute left-[18%] top-1/2 -translate-y-1/2 w-[clamp(260px,30vw,540px)] h-[clamp(260px,30vw,540px)] rounded-full blur-[110px]"
                   style={{ backgroundColor: '#C8F560' }}
                 />
               )}
 
-              <div className="relative z-10 space-y-[clamp(12px,1.4vw,24px)] max-w-[80vw]">
+              {/* Left 7 Cols: Title & Join Prompt */}
+              <div className="relative z-10 col-span-7 space-y-[clamp(12px,1.4vw,24px)] text-left">
                 {settings.eventMeta && (
                   <p className="text-[clamp(16px,1.25vw,24px)] font-medium text-[#8A8F98]">
                     {settings.eventMeta}
                   </p>
                 )}
-                <h1 className="text-[clamp(56px,6.8vw,136px)] font-semibold tracking-display leading-[0.98] text-[#F7F8F8] text-balance">
+                <h1 className="text-[clamp(54px,6.2vw,124px)] font-semibold tracking-display leading-[0.98] text-[#F7F8F8] text-balance">
                   {lang === 'fi' ? 'Kuka lajittelee?' : "Who's sorting?"}
                 </h1>
                 {lang === 'bilingual' && (
-                  <p className="text-[clamp(28px,3vw,60px)] font-medium tracking-display text-[#C8F560]">
+                  <p className="text-[clamp(26px,2.8vw,56px)] font-medium tracking-display text-[#C8F560]">
                     Kuka lajittelee?
                   </p>
                 )}
-                <p className="text-[clamp(18px,1.45vw,28px)] text-[#8A8F98] max-w-3xl mx-auto pt-2">
+                <p className="text-[clamp(18px,1.45vw,28px)] text-[#8A8F98] max-w-2xl pt-2 leading-snug">
                   {lang === 'fi'
-                    ? 'Pidä numerosi valmiina — seuraava kysymys alkaa kohta.'
+                    ? 'Skannaa QR-koodi saadaksesi numerosi — puhelimesi hälyttää, kun on sinun vuorosi vastata!'
                     : lang === 'en'
-                      ? 'Keep your door number handy — the next round starts soon.'
-                      : 'Keep your door number handy · Pidä numerosi valmiina'}
+                      ? 'Scan the QR code to get your number — your phone chimes when you’re up to answer!'
+                      : 'Scan to claim your number & answer on your phone · Skannaa ja hae numerosi!'}
                 </p>
+              </div>
+
+              {/* Right 5 Cols: High-Contrast QR Check-In Card */}
+              <div className="relative z-10 col-span-5 flex justify-center">
+                <Card
+                  variant="hero"
+                  padding="none"
+                  className="w-full max-w-[clamp(300px,28vw,460px)] p-[clamp(20px,2vw,36px)] flex flex-col items-center text-center gap-[clamp(14px,1.3vw,22px)]"
+                >
+                  <div className="text-[clamp(13px,1.05vw,18px)] font-semibold uppercase tracking-[0.06em] text-[#C8F560]">
+                    {lang === 'fi'
+                      ? 'Skannaa & liity mukaan'
+                      : lang === 'en'
+                        ? 'Scan to Join & Play'
+                        : 'Scan to Join · Skannaa mukaan'}
+                  </div>
+
+                  <div className="bg-white rounded-[14px] p-[clamp(10px,0.9vw,16px)] shadow-sm">
+                    <QrCodeSvg
+                      value={joinUrl}
+                      size="100%"
+                      className="w-[clamp(170px,16vw,270px)] h-[clamp(170px,16vw,270px)] block"
+                      label="Scan QR code to check in and receive your guest number"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 w-full">
+                    <div className="inline-flex items-center justify-center gap-2 text-[clamp(16px,1.35vw,24px)] font-semibold text-[#F7F8F8] tabular-mono">
+                      <Users className="w-[clamp(16px,1.3vw,22px)] h-[clamp(16px,1.3vw,22px)] text-[#4CC38A]" />
+                      <span>
+                        {checkedInNumbers.length}{' '}
+                        {lang === 'fi'
+                          ? 'mukana'
+                          : checkedInNumbers.length === 1
+                            ? 'guest joined'
+                            : 'guests joined'}
+                      </span>
+                    </div>
+                    <div className="text-[clamp(11px,0.85vw,15px)] tabular-mono text-[#8A8F98] truncate px-2">
+                      {displayJoinUrl}
+                    </div>
+                  </div>
+                </Card>
               </div>
             </div>
 

@@ -79,6 +79,53 @@ export interface ToastMessage {
   createdAt: number;
 }
 
+export interface LastPhoneAnswer {
+  number: number;
+  optionIndex: number;
+  correct: boolean | null;
+  timestamp: number;
+}
+
+export interface GuestQuestionView {
+  id: string;
+  type: QuestionType;
+  category: WasteCategory | null;
+  prompt: string;
+  promptFi?: string;
+  image?: string;
+  options: string[];
+  optionsFi?: string[];
+  answer?: number;
+  explanation?: string;
+  explanationFi?: string;
+}
+
+export interface GuestGameView {
+  eventName: string;
+  eventMeta: string;
+  languageMode: LanguageMode;
+  reducedMotion: boolean;
+  phase: GamePhase;
+  currentIndex: number;
+  totalQuestions: number;
+  currentNumber: number | null;
+  selectedOption: number | null;
+  roundOutcomeOverride: boolean | null;
+  timerStatus: TimerStatus;
+  timerRemainingMs: number;
+  timerStartedAt: number | null;
+  timerSeconds: number;
+  checkedInCount: number;
+  currentQuestion: GuestQuestionView | null;
+  finaleStats: {
+    played: number;
+    correct: number;
+    scoredCount: number;
+    accuracy: number;
+  } | null;
+  updatedAt: number;
+}
+
 export interface GameSnapshot {
   phase: GamePhase;
   currentIndex: number;

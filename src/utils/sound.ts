@@ -270,6 +270,36 @@ export function playTimerWarningTick(): void {
   });
 }
 
+/**
+ * Distinct, joyful ascending alert chime played on the called guest's phone
+ * when their number is drawn. Designed to cut cleanly through party chatter.
+ */
+export function playYourTurnAlert(): void {
+  const graph = getAudioGraph();
+  if (!graph) return;
+  const { ctx, out } = graph;
+  const now = ctx.currentTime;
+
+  const notes = [
+    { freq: 659.25, delay: 0, dur: 0.24, gain: 0.22 }, // E5
+    { freq: 880.0, delay: 0.095, dur: 0.26, gain: 0.24 }, // A5
+    { freq: 1174.66, delay: 0.19, dur: 0.34, gain: 0.25 }, // D6
+    { freq: 1318.51, delay: 0.29, dur: 0.52, gain: 0.24 }, // E6 bright bell
+  ];
+
+  notes.forEach((n) => {
+    playOrganicTone(ctx, out, {
+      freq: n.freq,
+      startTime: now + n.delay,
+      duration: n.dur,
+      peakGain: n.gain,
+      type: 'sine',
+      overtoneRatio: 2,
+      overtoneGain: 0.28,
+    });
+  });
+}
+
 // Backwards-compatible aliases
 export const playDrawLand = playNumberDrawn;
 
